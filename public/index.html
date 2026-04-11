@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="pt-br">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>App-carro — Agregador de Usados</title>
+    <link rel="stylesheet" href="/styles.css" />
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand">
+        <span class="logo">AC</span>
+        <div>
+          <h1>App-carro</h1>
+          <small>Agregador inteligente — Campinas e região</small>
+        </div>
+      </div>
+      <div class="health" id="health">carregando…</div>
+    </header>
+
+    <main>
+      <section class="filters">
+        <form id="search-form">
+          <label>
+            Marca
+            <input type="text" name="brand" placeholder="Ex: Toyota" />
+          </label>
+          <label>
+            Modelo
+            <input type="text" name="model" placeholder="Ex: Corolla" />
+          </label>
+          <label>
+            Preço máx
+            <input type="number" name="maxPrice" placeholder="150000" />
+          </label>
+          <label>
+            Ano mín
+            <input type="number" name="minYear" placeholder="2018" />
+          </label>
+          <button type="submit" id="search-btn">Buscar</button>
+        </form>
+        <div class="status" id="status"></div>
+      </section>
+
+      <section id="source-status"></section>
+
+      <section id="results" class="cards"></section>
+    </main>
+
+    <script src="/app.js"></script>
+  </body>
+</html>
