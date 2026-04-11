@@ -112,8 +112,17 @@ async function loadHealth() {
       d.hasAnthropicKey ? 'IA ligada' : 'IA DESLIGADA',
       d.facebookEnabled ? 'FB ligado' : 'FB off',
     ];
-    healthEl.className = 'health ' + (d.hasAnthropicKey ? 'ok' : 'bad');
+    if (d.demoMode) parts.unshift('DEMO');
+    healthEl.className = 'health ' + (d.demoMode ? 'ok' : d.hasAnthropicKey ? 'ok' : 'bad');
     healthEl.textContent = parts.join(' · ');
+    if (d.demoMode) {
+      const banner = document.createElement('div');
+      banner.className = 'demo-banner';
+      banner.innerHTML =
+        '<strong>Modo DEMO</strong> — dados de exemplo. Pra usar dados reais, ' +
+        'desligue DEMO_MODE nas variaveis do ambiente e rode localmente (IP residencial).';
+      document.querySelector('main').prepend(banner);
+    }
   } catch {
     healthEl.className = 'health bad';
     healthEl.textContent = 'server off';

@@ -8,12 +8,20 @@
 // Para obter mais resultados, seria necessario manter uma sessao autenticada,
 // o que tem alto risco de ban de conta. Nao recomendado.
 
-import { chromium } from 'playwright-chromium';
 import { config } from '../config.js';
 
 const URL_BASE = 'https://www.facebook.com/marketplace';
 
 export async function fetchFacebook(filters = {}) {
+  // Import dinamico: playwright-chromium e optional dependency.
+  // Se nao estiver instalado, o runner pega o throw e marca a fonte como indisponivel.
+  let chromium;
+  try {
+    ({ chromium } = await import('playwright-chromium'));
+  } catch {
+    throw new Error('playwright-chromium nao instalado (npx playwright install chromium)');
+  }
+
   let browser;
   try {
     browser = await chromium.launch({ headless: true });

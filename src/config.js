@@ -19,7 +19,8 @@ export const config = {
   minYear: parseInt(process.env.MIN_YEAR || '2018', 10),
   targetMargin: parseFloat(process.env.TARGET_MARGIN || '0.15'),
   sourceTimeoutMs: parseInt(process.env.SOURCE_TIMEOUT_MS || '45000', 10),
-  enableFacebook: (process.env.ENABLE_FACEBOOK || 'true') === 'true',
+  enableFacebook: (process.env.ENABLE_FACEBOOK || 'false') === 'true',
+  demoMode: (process.env.DEMO_MODE || 'false') === 'true',
 };
 
 // Regiao Metropolitana de Campinas (IBGE). Usada pra filtrar cidades.

@@ -6,6 +6,7 @@ import { upsertCar, updateScore, getRecentCars } from './src/db.js';
 import { fetchAllSources } from './src/sources/index.js';
 import { enrichWithFipe } from './src/fipe.js';
 import { scoreCars } from './src/intelligence.js';
+import { getDemoResponse } from './src/demo.js';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
@@ -20,6 +21,7 @@ app.get('/api/health', (_req, res) => {
     minYear: config.minYear,
     hasAnthropicKey: !!config.anthropicApiKey,
     facebookEnabled: config.enableFacebook,
+    demoMode: config.demoMode,
   });
 });
 
@@ -32,6 +34,15 @@ app.post('/api/search', async (req, res) => {
   const filters = req.body || {};
   const minYear = filters.minYear || config.minYear;
   const started = Date.now();
+
+  // Modo demo: retorna fixtures sem tocar em fontes/FIPE/Claude.
+  // Util pra visualizar a UI em ambientes com IP de datacenter bloqueado
+  // (Replit, Vercel, Railway...).
+  if (config.demoMode) {
+    console.log('[search] DEMO_MODE=true, retornando fixtures');
+    const demo = getDemoResponse();
+    return res.json({ ...demo, elapsedMs: Date.now() - started });
+  }
 
   try {
     console.log('[search] iniciando busca', filters);
@@ -128,14 +139,17 @@ function matchText(a, b) {
     );
 }
 
-app.listen(config.port, () => {
-  console.log(`\n  App-carro rodando em http://localhost:${config.port}`);
+app.listen(config.port, '0.0.0.0', () => {
+  console.log(`\n  App-carro rodando em http://0.0.0.0:${config.port}`);
   console.log(`  Regiao: ${config.region.city}/${config.region.state}`);
   console.log(`  Ano minimo: ${config.minYear}`);
   console.log(
     `  Claude API: ${config.anthropicApiKey ? 'configurada' : 'AUSENTE (score IA desabilitado)'}`,
   );
   console.log(
-    `  Facebook Marketplace: ${config.enableFacebook ? 'habilitado' : 'desabilitado'}\n`,
+    `  Facebook Marketplace: ${config.enableFacebook ? 'habilitado' : 'desabilitado'}`,
+  );
+  console.log(
+    `  Demo mode: ${config.demoMode ? 'LIGADO (fixtures)' : 'desligado (scraping real)'}\n`,
   );
 });

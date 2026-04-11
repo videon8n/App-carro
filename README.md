@@ -44,6 +44,39 @@ Abra <http://localhost:3000> no navegador. Clique **Buscar** (pode deixar
 os filtros vazios). A primeira busca leva 20–60s — fontes rodam em
 paralelo e a IA pontua em batches.
 
+## Rodar no celular via Replit (mais rápido pra visualizar)
+
+Se você só quer **ver a cara do app no celular**, sem instalar nada:
+
+1. Abre <https://replit.com> no navegador do celular, cria conta grátis.
+2. **Create Repl** → **Import from GitHub** → cola a URL:
+   `https://github.com/videon8n/app-carro`
+3. Seleciona a branch `claude/car-marketplace-aggregator-E2ZZx`.
+4. O Replit lê o `.replit` do repo automaticamente e já configura Node 20,
+   `DEMO_MODE=true` (mostra fixtures) e `ENABLE_FACEBOOK=false`.
+5. Aperta **Run**. Primeira execução instala deps (~1 min).
+6. O Replit abre uma aba "Webview" com o app rodando. Dá pra abrir também
+   numa URL pública tipo `https://app-carro.<seu-user>.repl.co`.
+
+### Por que modo demo no Replit?
+
+Os IPs do Replit/Vercel/Railway/etc são de datacenter e ficam **bloqueados
+pelos anti-bots** da OLX, Webmotors e Mercado Livre. Então o scraping real
+quase sempre devolve zero resultados. O **modo demo** retorna 8 carros
+fictícios (Corolla, HR-V, T-Cross, Toro, Renegade…) com score pré-calculado,
+red flags e FIPE delta, pra você ver exatamente como a UI se comporta.
+
+### Ligar o scraping real no Replit (opcional)
+
+Se quiser tentar mesmo assim:
+- Tab **Secrets** (ícone de cadeado na barra lateral)
+- Adiciona `DEMO_MODE` = `false`
+- Adiciona `ANTHROPIC_API_KEY` = sua chave
+- Reroda
+
+Taxa de sucesso esperada: **baixa** (ver nota sobre IPs de datacenter).
+Pra scraping estável, rode local (IP residencial) ou use Cloudflare Tunnel.
+
 ## Configuração
 
 Via `.env`:
@@ -58,7 +91,8 @@ Via `.env`:
 | `MIN_YEAR`          | `2018`               | Ano mínimo dos carros                    |
 | `TARGET_MARGIN`     | `0.15`               | Margem alvo de revenda (usada no prompt) |
 | `SOURCE_TIMEOUT_MS` | `45000`              | Timeout por fonte                        |
-| `ENABLE_FACEBOOK`   | `true`               | Liga/desliga adaptador FB Marketplace    |
+| `ENABLE_FACEBOOK`   | `false`              | Liga/desliga adaptador FB Marketplace    |
+| `DEMO_MODE`         | `false`              | Retorna fixtures em vez de scraping real |
 
 ## Arquitetura
 
