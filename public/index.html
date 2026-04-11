@@ -2,9 +2,11 @@
 <html lang="pt-br">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#0a0e18" />
     <title>App-carro — Agregador de Usados</title>
     <link rel="stylesheet" href="/styles.css" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Crect width='100' height='100' rx='22' fill='%234ea1ff'/%3E%3Ctext x='50' y='68' font-family='system-ui' font-size='52' font-weight='800' fill='%23fff' text-anchor='middle'%3EAC%3C/text%3E%3C/svg%3E" />
   </head>
   <body>
     <header class="topbar">
@@ -12,7 +14,7 @@
         <span class="logo">AC</span>
         <div>
           <h1>App-carro</h1>
-          <small>Agregador inteligente — Campinas e região</small>
+          <small>Agregador inteligente · Campinas e região</small>
         </div>
       </div>
       <div class="health" id="health">carregando…</div>
@@ -30,16 +32,18 @@
             <input type="text" name="model" placeholder="Ex: Corolla" />
           </label>
           <label>
-            Preço máx
+            Preço máximo
             <input type="number" name="maxPrice" placeholder="150000" />
           </label>
           <label>
-            Ano mín
+            Ano mínimo
             <input type="number" name="minYear" placeholder="2018" />
           </label>
           <button type="submit" id="search-btn">Buscar</button>
         </form>
-        <div class="status" id="status"></div>
+        <div class="status" id="status">
+          <span>Clique em Buscar pra começar.</span>
+        </div>
       </section>
 
       <section id="source-status"></section>
