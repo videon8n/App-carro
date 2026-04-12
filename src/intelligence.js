@@ -13,6 +13,8 @@ function getClient() {
   return client;
 }
 
+// System prompt estavel (sem timestamps, UUIDs ou conteudo dinamico)
+// pra maximizar cache hits via cache_control ephemeral.
 const SYSTEM_PROMPT = `Voce e um especialista em compra de carros usados para revenda num estacionamento em Campinas/SP.
 
 Seu trabalho: avaliar anuncios de carros para um comprador profissional que:
@@ -41,7 +43,7 @@ Seja rigoroso com red flags. E melhor score baixo justo que perder dinheiro.
 Responda APENAS o JSON array, sem markdown, sem explicacao extra.`;
 
 function carsToUserPrompt(cars) {
-  const items = cars.map((c, i) => ({
+  const items = cars.map((c) => ({
     externalId: c.externalId,
     title: c.title,
     brand: c.brand,
@@ -59,7 +61,6 @@ function carsToUserPrompt(cars) {
 }
 
 function parseResponse(text, cars) {
-  // Claude as vezes devolve com markdown fences; limpa.
   let clean = text.trim();
   if (clean.startsWith('```')) {
     clean = clean.replace(/^```(?:json)?\s*/i, '').replace(/\s*```$/, '');
@@ -67,7 +68,6 @@ function parseResponse(text, cars) {
   try {
     const arr = JSON.parse(clean);
     if (!Array.isArray(arr)) return [];
-    // Mapeia por externalId pra garantir match
     const byId = new Map(arr.map((x) => [String(x.externalId), x]));
     return cars.map((c) => {
       const r = byId.get(String(c.externalId));
@@ -108,7 +108,8 @@ export async function scoreCars(cars) {
     try {
       const response = await c.messages.create({
         model: config.anthropicModel,
-        max_tokens: 2048,
+        max_tokens: 16000,
+        thinking: { type: 'adaptive' },
         system: [
           {
             type: 'text',
@@ -123,13 +124,33 @@ export async function scoreCars(cars) {
           },
         ],
       });
+
+      // Log cache performance pra diagnostico
+      const u = response.usage;
+      if (u) {
+        console.log(
+          `[intelligence] batch ${Math.floor(i / BATCH) + 1}: ` +
+          `input=${u.input_tokens} cache_read=${u.cache_read_input_tokens ?? 0} ` +
+          `cache_write=${u.cache_creation_input_tokens ?? 0} output=${u.output_tokens}`,
+        );
+      }
+
       const textBlock = response.content.find((b) => b.type === 'text');
       if (textBlock) {
         const parsed = parseResponse(textBlock.text, chunk);
         results.push(...parsed.filter(Boolean));
       }
     } catch (err) {
-      console.warn('[intelligence] erro na chamada Claude:', err.message);
+      if (err instanceof Anthropic.RateLimitError) {
+        console.warn('[intelligence] rate limit — aguardando retry automatico da SDK');
+      } else if (err instanceof Anthropic.AuthenticationError) {
+        console.error('[intelligence] ANTHROPIC_API_KEY invalida. Verifique .env');
+        break;
+      } else if (err instanceof Anthropic.APIError) {
+        console.warn(`[intelligence] API error ${err.status}: ${err.message}`);
+      } else {
+        console.warn('[intelligence] erro inesperado:', err.message);
+      }
     }
   }
   return results;
