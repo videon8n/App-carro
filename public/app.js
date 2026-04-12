@@ -1,6 +1,6 @@
 const $ = (sel) => document.querySelector(sel);
 const form = $('#search-form');
-const btn = $('#search-btn');
+const searchBtn = $('#search-btn');
 const statusEl = $('#status');
 const results = $('#results');
 const srcStatus = $('#source-status');
@@ -8,6 +8,51 @@ const healthEl = $('#health');
 
 let currentCars = [];
 const favorites = new Set(JSON.parse(localStorage.getItem('appCarroFavs') || '[]'));
+
+// Cores de marca. Mantenha em sincronia com src/demo.js BRAND_COLORS.
+const BRAND_COLORS = {
+  Toyota: '#eb0a1e', Honda: '#cc0000', Jeep: '#2b7a3a',
+  Volkswagen: '#2a6ba8', Chevrolet: '#f0b400', Hyundai: '#3a7bd5',
+  Fiat: '#9e2a3c', Renault: '#ffc533', Ford: '#1f5ea8', Nissan: '#c8102e',
+};
+
+// Tiers de score. Mantenha em sincronia com .score-badge.s-* em styles.css.
+const SCORE_TIERS = [
+  { min: 85, cls: 's-excellent' },
+  { min: 65, cls: 's-good' },
+  { min: 45, cls: 's-fair' },
+  { min: 0,  cls: 's-poor' },
+];
+
+const DELTA_TIERS = [
+  { max: -0.05, cls: 'good' },
+  { max:  0.05, cls: 'neutral' },
+  { max:  Infinity, cls: 'bad' },
+];
+
+// Tabela unica de modos de ordenacao: alimenta tanto o <select> quanto
+// a logica de comparacao. Adicione um item aqui pra criar um novo modo.
+const SORT_MODES = [
+  {
+    key: 'score',
+    label: 'Melhor oportunidade',
+    compare: (a, b) => {
+      const s = (b.score ?? -1) - (a.score ?? -1);
+      if (s !== 0) return s;
+      return (a.fipeDelta ?? 0) - (b.fipeDelta ?? 0);
+    },
+  },
+  { key: 'delta-asc', label: 'Maior desconto FIPE',
+    compare: (a, b) => (a.fipeDelta ?? 0) - (b.fipeDelta ?? 0) },
+  { key: 'price-asc', label: 'Menor preço',
+    compare: (a, b) => (a.price ?? Infinity) - (b.price ?? Infinity) },
+  { key: 'price-desc', label: 'Maior preço',
+    compare: (a, b) => (b.price ?? 0) - (a.price ?? 0) },
+  { key: 'km-asc', label: 'Menor km',
+    compare: (a, b) => (a.km ?? Infinity) - (b.km ?? Infinity) },
+  { key: 'year-desc', label: 'Mais novo',
+    compare: (a, b) => (b.year ?? 0) - (a.year ?? 0) },
+];
 
 const fmtBRL = (n) =>
   n == null
@@ -20,6 +65,7 @@ const fmtBRL = (n) =>
 
 const fmtKm = (n) => (n == null ? '—' : `${n.toLocaleString('pt-BR')} km`);
 
+// Espelha src/normalize.js formatPhone. Mantenha em sincronia.
 function fmtPhone(p) {
   if (!p) return null;
   const d = String(p).replace(/\D/g, '');
@@ -30,19 +76,15 @@ function fmtPhone(p) {
 
 function scoreClass(s) {
   if (s == null) return '';
-  if (s >= 85) return 's90';
-  if (s >= 65) return 's70';
-  if (s >= 45) return 's50';
-  return 's30';
+  return SCORE_TIERS.find((t) => s >= t.min)?.cls || '';
 }
 
 function deltaLabel(delta) {
   if (delta == null) return { text: 'sem FIPE', cls: 'neutral' };
   const pct = delta * 100;
   const text = `${pct > 0 ? '+' : ''}${pct.toFixed(1)}% FIPE`;
-  if (pct <= -5) return { text, cls: 'good' };
-  if (pct >= 5) return { text, cls: 'bad' };
-  return { text, cls: 'neutral' };
+  const cls = DELTA_TIERS.find((t) => delta <= t.max)?.cls || 'neutral';
+  return { text, cls };
 }
 
 function escapeHtml(s) {
@@ -54,42 +96,45 @@ function escapeHtml(s) {
     .replace(/'/g, '&#39;');
 }
 
-// Fallback SVG placeholder quando o carro nao tem photoUrl ou a imagem falha.
+// Gera data URI de SVG como fallback quando o anuncio nao tem photoUrl.
+// Memoizado por (brand|model|year) — mesma combinacao reaproveita a string.
+// Mantenha em sincronia com src/demo.js carSvg (server serve a versao rica
+// nos fixtures; esta aqui e a rede de seguranca pra listagens reais).
+const svgCache = new Map();
 function carSvgPlaceholder(brand, model, year) {
-  const BRAND_COLORS = {
-    Toyota: '#eb0a1e', Honda: '#cc0000', Jeep: '#2b7a3a',
-    Volkswagen: '#2a6ba8', Chevrolet: '#f0b400', Hyundai: '#3a7bd5',
-    Fiat: '#9e2a3c', Renault: '#ffc533', Ford: '#1f5ea8', Nissan: '#c8102e',
-  };
+  const key = `${brand}|${model}|${year}`;
+  const cached = svgCache.get(key);
+  if (cached) return cached;
   const accent = BRAND_COLORS[brand] || '#4ea1ff';
   const safe = (s) => String(s || '').replace(/[<>&"']/g, '');
   const svg = `<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 600 400'><defs><linearGradient id='bg' x1='0' y1='0' x2='0' y2='1'><stop offset='0' stop-color='#1e2636'/><stop offset='1' stop-color='#0a0e18'/></linearGradient></defs><rect width='600' height='400' fill='url(#bg)'/><text x='300' y='200' font-family='system-ui' font-size='36' font-weight='800' fill='#fff' text-anchor='middle'>${safe(brand || 'Carro')}</text><text x='300' y='240' font-family='system-ui' font-size='20' fill='${accent}' text-anchor='middle'>${safe(model || '')} ${year || ''}</text></svg>`;
-  return 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  const uri = 'data:image/svg+xml;utf8,' + encodeURIComponent(svg);
+  svgCache.set(key, uri);
+  return uri;
+}
+
+function carKey(car) {
+  return `${car.source}:${car.externalId}`;
 }
 
 function cardHtml(car) {
   const phone = fmtPhone(car.phone);
   const delta = deltaLabel(car.fipeDelta);
+  const key = carKey(car);
+  const isFav = favorites.has(key);
+  const photoSrc =
+    car.photoUrl || carSvgPlaceholder(car.brand, car.model, car.year);
   const redFlags = (car.redFlags || [])
     .slice(0, 3)
     .map((rf) => `<span class="red-flag">${escapeHtml(rf)}</span>`)
     .join('');
 
-  const photoSrc = car.photoUrl || carSvgPlaceholder(car.brand, car.model, car.year);
-  const fallback = carSvgPlaceholder(car.brand, car.model, car.year);
-
-  const isFav = favorites.has(carKey(car));
-  const favClass = isFav ? 'on' : '';
-  const cardFavClass = isFav ? 'favorite' : '';
-
   return `
-    <article class="card ${cardFavClass}" data-key="${escapeHtml(carKey(car))}">
+    <article class="card ${isFav ? 'favorite' : ''}" data-key="${escapeHtml(key)}">
       <div class="photo-wrap">
-        <img class="photo" src="${escapeHtml(photoSrc)}" alt="${escapeHtml(car.title || '')}"
-             loading="lazy"
-             onerror="this.onerror=null;this.src='${fallback.replace(/'/g, "\\'")}'" />
+        <img class="photo" src="${escapeHtml(photoSrc)}" alt="${escapeHtml(car.title || '')}" loading="lazy" />
         <span class="source-tag">${escapeHtml(car.source)}</span>
-        <button class="fav-btn ${favClass}" aria-label="Favoritar" data-fav="${escapeHtml(carKey(car))}">
+        <button class="fav-btn ${isFav ? 'on' : ''}" aria-label="Favoritar" data-fav="${escapeHtml(key)}">
           ${isFav ? '★' : '☆'}
         </button>
         <div class="score-overlay">
@@ -125,56 +170,20 @@ function cardHtml(car) {
   `;
 }
 
-function carKey(car) {
-  return `${car.source}:${car.externalId}`;
-}
-
-function toggleFavorite(key) {
-  if (favorites.has(key)) favorites.delete(key);
-  else favorites.add(key);
-  localStorage.setItem('appCarroFavs', JSON.stringify([...favorites]));
-}
-
-function sortCars(cars, mode) {
-  const sorted = [...cars];
-  switch (mode) {
-    case 'price-asc':
-      sorted.sort((a, b) => (a.price ?? Infinity) - (b.price ?? Infinity));
-      break;
-    case 'price-desc':
-      sorted.sort((a, b) => (b.price ?? 0) - (a.price ?? 0));
-      break;
-    case 'km-asc':
-      sorted.sort((a, b) => (a.km ?? Infinity) - (b.km ?? Infinity));
-      break;
-    case 'year-desc':
-      sorted.sort((a, b) => (b.year ?? 0) - (a.year ?? 0));
-      break;
-    case 'delta-asc':
-      sorted.sort((a, b) => (a.fipeDelta ?? 0) - (b.fipeDelta ?? 0));
-      break;
-    case 'score':
-    default:
-      sorted.sort((a, b) => {
-        const sa = a.score ?? -1;
-        const sb = b.score ?? -1;
-        if (sa !== sb) return sb - sa;
-        return (a.fipeDelta ?? 0) - (b.fipeDelta ?? 0);
-      });
-  }
-  // Favoritos sempre no topo dentro do sort escolhido
-  sorted.sort((a, b) => {
+function sortCars(cars, modeKey) {
+  const mode = SORT_MODES.find((m) => m.key === modeKey) || SORT_MODES[0];
+  return [...cars].sort((a, b) => {
     const fa = favorites.has(carKey(a)) ? 1 : 0;
     const fb = favorites.has(carKey(b)) ? 1 : 0;
-    return fb - fa;
+    if (fa !== fb) return fb - fa;
+    return mode.compare(a, b);
   });
-  return sorted;
 }
 
 function renderCars() {
   const sortEl = $('#sort-select');
-  const mode = sortEl?.value || 'score';
-  const sorted = sortCars(currentCars, mode);
+  const modeKey = sortEl?.value || 'score';
+  const sorted = sortCars(currentCars, modeKey);
   if (sorted.length === 0) {
     results.innerHTML = `
       <div class="empty">
@@ -187,13 +196,31 @@ function renderCars() {
   results.innerHTML = sorted.map(cardHtml).join('');
 }
 
+// Muta um unico card ao invez de re-renderizar tudo: evita perder scroll,
+// foco e forcar re-decode de imagens.
+function updateCardFavorite(cardEl, isFav) {
+  cardEl.classList.toggle('favorite', isFav);
+  const fav = cardEl.querySelector('.fav-btn');
+  if (fav) {
+    fav.classList.toggle('on', isFav);
+    fav.textContent = isFav ? '★' : '☆';
+  }
+  if (isFav) results.prepend(cardEl);
+}
+
+function toggleFavorite(key) {
+  if (favorites.has(key)) favorites.delete(key);
+  else favorites.add(key);
+  localStorage.setItem('appCarroFavs', JSON.stringify([...favorites]));
+}
+
 function renderSourceStatus(stats) {
   const parts = [];
   for (const key of Object.keys(stats || {})) {
     const s = stats[key];
     const cls = s.ok ? 'ok' : 'bad';
     parts.push(
-      `<div class="src-chip ${cls}">${escapeHtml(s.label)}: ${s.ok ? `${s.count}` : 'indisponivel'}</div>`,
+      `<div class="src-chip ${cls}">${escapeHtml(s.label)}: ${s.ok ? s.count : 'indisponivel'}</div>`,
     );
   }
   srcStatus.innerHTML = parts.join('');
@@ -203,16 +230,19 @@ async function loadHealth() {
   try {
     const r = await fetch('/api/health');
     const d = await r.json();
-    const flags = [];
-    if (d.demoMode) flags.push('DEMO');
-    flags.push(d.region.city + '/' + d.region.state);
-    flags.push('≥' + d.minYear);
-    flags.push(d.hasAnthropicKey ? 'IA on' : 'IA off');
-    healthEl.className = 'health ' + (d.demoMode || d.hasAnthropicKey ? 'ok' : 'bad');
+    const flags = [
+      d.region.city + '/' + d.region.state,
+      '≥' + d.minYear,
+      d.hasAnthropicKey ? 'IA on' : 'IA off',
+    ];
+    healthEl.className =
+      'health ' + (d.demoMode || d.hasAnthropicKey ? 'ok' : 'bad');
     healthEl.innerHTML =
-      '<strong>' + (d.demoMode ? 'DEMO' : d.hasAnthropicKey ? 'LIVE' : 'IA off') + '</strong><br>' +
-      escapeHtml(flags.slice(1).join(' · '));
-    if (d.demoMode) {
+      '<strong>' +
+      (d.demoMode ? 'DEMO' : d.hasAnthropicKey ? 'LIVE' : 'IA off') +
+      '</strong><br>' +
+      escapeHtml(flags.join(' · '));
+    if (d.demoMode && !document.querySelector('.demo-banner')) {
       const banner = document.createElement('div');
       banner.className = 'demo-banner';
       banner.innerHTML =
@@ -227,10 +257,17 @@ async function loadHealth() {
 }
 
 function renderSkeleton() {
-  results.innerHTML = Array(4)
-    .fill(0)
-    .map(() => '<div class="skeleton-card"></div>')
+  results.innerHTML = Array(4).fill('<div class="skeleton-card"></div>').join('');
+}
+
+function buildStatusHtml(count) {
+  const options = SORT_MODES
+    .map((m) => `<option value="${m.key}">${escapeHtml(m.label)}</option>`)
     .join('');
+  return (
+    `<span class="count">${count} carros encontrados</span>` +
+    `<div class="sort-wrap">Ordenar:&nbsp;<select id="sort-select">${options}</select></div>`
+  );
 }
 
 form.addEventListener('submit', async (e) => {
@@ -242,8 +279,8 @@ form.addEventListener('submit', async (e) => {
     payload[k] = k === 'maxPrice' || k === 'minYear' ? Number(v) : v;
   }
 
-  btn.disabled = true;
-  btn.textContent = 'Buscando…';
+  searchBtn.disabled = true;
+  searchBtn.textContent = 'Buscando…';
   statusEl.innerHTML = '<span>Buscando nas fontes…</span>';
   srcStatus.innerHTML = '';
   renderSkeleton();
@@ -260,42 +297,30 @@ form.addEventListener('submit', async (e) => {
     renderSourceStatus(data.stats);
     currentCars = data.cars || [];
     renderCars();
-
-    statusEl.innerHTML =
-      `<span class="count">${data.count} carros encontrados</span>` +
-      `<div class="sort-wrap">Ordenar:&nbsp;` +
-      `<select id="sort-select">
-        <option value="score">Melhor oportunidade</option>
-        <option value="delta-asc">Maior desconto FIPE</option>
-        <option value="price-asc">Menor preço</option>
-        <option value="price-desc">Maior preço</option>
-        <option value="km-asc">Menor km</option>
-        <option value="year-desc">Mais novo</option>
-      </select></div>`;
+    statusEl.innerHTML = buildStatusHtml(data.count);
   } catch (err) {
     statusEl.textContent = 'Erro: ' + err.message;
     results.innerHTML = '';
   } finally {
-    btn.disabled = false;
-    btn.textContent = 'Buscar';
+    searchBtn.disabled = false;
+    searchBtn.textContent = 'Buscar';
   }
 });
 
-// Delegation pro botao de favorito
 results.addEventListener('click', (e) => {
-  const btn = e.target.closest('[data-fav]');
-  if (!btn) return;
+  const favBtn = e.target.closest('[data-fav]');
+  if (!favBtn) return;
   e.preventDefault();
-  const key = btn.dataset.fav;
+  const key = favBtn.dataset.fav;
   toggleFavorite(key);
-  renderCars();
+  const cardEl = favBtn.closest('.card');
+  if (cardEl) updateCardFavorite(cardEl, favorites.has(key));
 });
 
-// Sort dropdown (may be recreated after each search)
-document.addEventListener('change', (e) => {
-  if (e.target && e.target.id === 'sort-select') {
-    renderCars();
-  }
+// O #sort-select e recriado a cada busca (via buildStatusHtml), entao
+// delegamos do pai #status em vez de rebind.
+statusEl.addEventListener('change', (e) => {
+  if (e.target && e.target.id === 'sort-select') renderCars();
 });
 
 loadHealth();

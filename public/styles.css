@@ -296,14 +296,6 @@ main {
   object-fit: cover;
   display: block;
 }
-.card .photo.placeholder {
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  color: var(--text-dim);
-  font-size: 12px;
-}
-
 .source-tag {
   position: absolute;
   top: 10px;
@@ -368,10 +360,10 @@ main {
   border: 1px solid rgba(255, 255, 255, 0.08);
   font-variant-numeric: tabular-nums;
 }
-.score-badge.s90 { background: rgba(16, 185, 129, 0.25); color: #4ade80; border-color: rgba(52, 211, 153, 0.5); }
-.score-badge.s70 { background: rgba(132, 204, 22, 0.2); color: #a3e635; border-color: rgba(132, 204, 22, 0.4); }
-.score-badge.s50 { background: rgba(251, 191, 36, 0.2); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
-.score-badge.s30 { background: rgba(248, 113, 113, 0.2); color: var(--bad); border-color: rgba(248, 113, 113, 0.4); }
+.score-badge.s-excellent { background: rgba(16, 185, 129, 0.25); color: #4ade80; border-color: rgba(52, 211, 153, 0.5); }
+.score-badge.s-good { background: rgba(132, 204, 22, 0.2); color: #a3e635; border-color: rgba(132, 204, 22, 0.4); }
+.score-badge.s-fair { background: rgba(251, 191, 36, 0.2); color: var(--warn); border-color: rgba(251, 191, 36, 0.4); }
+.score-badge.s-poor { background: rgba(248, 113, 113, 0.2); color: var(--bad); border-color: rgba(248, 113, 113, 0.4); }
 
 /* Card body */
 
@@ -518,6 +510,7 @@ main {
 /* ===================== EMPTY & LOADING ===================== */
 
 .empty {
+  grid-column: 1 / -1;
   text-align: center;
   padding: 60px 20px;
   color: var(--text-muted);

@@ -4,6 +4,7 @@
 // pra renderizar sempre, sem depender de hosts externos.
 
 // Cores de marca pra personalizar o placeholder SVG de cada carro.
+// Mantenha em sincronia com BRAND_COLORS em public/app.js.
 const BRAND_COLORS = {
   Toyota: '#eb0a1e',
   Honda: '#cc0000',
