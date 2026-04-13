@@ -9,9 +9,10 @@
     "node": ">=20"
   },
   "scripts": {
+    "setup": "node setup.mjs",
     "start": "node server.js",
     "dev": "node --watch server.js",
-    "postinstall": "node -e \"console.log('\\n-> Rode: npx playwright install chromium\\n-> Depois: cp .env.example .env e preencha ANTHROPIC_API_KEY\\n')\""
+    "sync": "git pull origin main && npm install"
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.40.0",

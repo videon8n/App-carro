@@ -9,6 +9,57 @@ pelas melhores.
 Filtro hard: carros de **2018 ou mais novos**, na **Região Metropolitana
 de Campinas**.
 
+## 🚀 Quickstart (roda no seu computador)
+
+Pré-requisitos: **Node.js 20+** (baixe em <https://nodejs.org>, versão LTS).
+
+```bash
+git clone https://github.com/videon8n/App-carro
+cd App-carro
+npm run setup      # instala deps, cria .env, prepara data/
+npm run dev        # auto-reload quando qualquer arquivo muda
+```
+
+Abra <http://localhost:3000>. **O modo DEMO já vem ligado** por padrão —
+você vê os 8 carros fictícios sem precisar de chave da API.
+
+**Pra usar dados reais** (scraping real + IA avaliando):
+
+1. Edite `.env`
+2. Troque `DEMO_MODE=true` por `DEMO_MODE=false`
+3. Preencha `ANTHROPIC_API_KEY=sk-ant-...` (pega em <https://console.anthropic.com>)
+4. Reinicie o `npm run dev`
+
+### Comandos úteis
+
+| Comando | O que faz |
+|---|---|
+| `npm run setup` | Setup inicial: checa Node, instala deps, cria `.env` |
+| `npm run dev` | Server em modo desenvolvimento, auto-reload ao salvar |
+| `npm start` | Server em modo produção (sem watch) |
+| `npm run sync` | Puxa a versão mais nova do GitHub + `npm install` |
+
+### Estrutura do projeto
+
+```
+App-carro/
+├── server.js                  # Express: /api/search, /api/health, /api/cars
+├── setup.mjs                  # Setup multiplataforma (Node-only)
+├── public/                    # Frontend: HTML + CSS + JS vanilla
+│   ├── index.html
+│   ├── styles.css
+│   └── app.js
+├── src/
+│   ├── config.js              # .env + lista de cidades da RMC
+│   ├── db.js                  # SQLite: schema + upsert + cache
+│   ├── demo.js                # 8 carros fictícios com SVG inline
+│   ├── normalize.js           # parsers: preço, ano, km, telefone
+│   ├── fipe.js                # cliente FIPE público + cache 7 dias
+│   ├── intelligence.js        # Claude API com prompt caching + adaptive thinking
+│   └── sources/               # 4 adaptadores: OLX, Webmotors, ML, FB
+└── data/app.db                # SQLite (criado em runtime)
+```
+
 ## Avisos importantes
 
 - **OLX, Webmotors, Mercado Livre e Facebook proíbem scraping nos Termos
