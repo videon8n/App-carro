@@ -65,8 +65,9 @@ mais comuns no Windows:
 
 - **winget não encontrado**: Windows muito antigo. Atualiza pelo
   Windows Update, ou instala "App Installer" pela Microsoft Store.
-- **better-sqlite3 build error**: o Node LTS installer já traz o que
-  precisa. Se falhar, rode o instalador de novo.
+- **Erro de compilação nativa**: a partir de abril 2026 o projeto usa
+  JSON file storage (nada de SQLite nativo) — então isso não deveria
+  acontecer. Se aparecer, pode ser algum outro pacote; me avisa.
 - **Antivírus bloqueando**: adiciona `%USERPROFILE%\App-carro` à
   whitelist do Defender/Norton/etc.
 
@@ -114,13 +115,15 @@ App-carro/
 │   └── app.js
 ├── src/
 │   ├── config.js              # .env + lista de cidades da RMC
-│   ├── db.js                  # SQLite: schema + upsert + cache
+│   ├── db.js                  # Persistência JSON: cars + fipe cache
 │   ├── demo.js                # 8 carros fictícios com SVG inline
 │   ├── normalize.js           # parsers: preço, ano, km, telefone
 │   ├── fipe.js                # cliente FIPE público + cache 7 dias
 │   ├── intelligence.js        # Claude API com prompt caching + adaptive thinking
 │   └── sources/               # 4 adaptadores: OLX, Webmotors, ML, FB
-└── data/app.db                # SQLite (criado em runtime)
+└── data/
+    ├── cars.json              # anúncios agregados (criado em runtime)
+    └── fipe.json              # cache FIPE (criado em runtime)
 ```
 
 ## Avisos importantes
@@ -219,7 +222,7 @@ App-carro/
 │   └── app.js
 ├── src/
 │   ├── config.js           # .env + lista de cidades da RMC
-│   ├── db.js               # SQLite (better-sqlite3): schema + upsert + cache
+│   ├── db.js               # JSON file storage: cars + fipe cache
 │   ├── normalize.js        # parsers: preço, ano, km, telefone, marca/modelo
 │   ├── fipe.js             # cliente FIPE público + cache 7 dias
 │   ├── intelligence.js     # cliente Claude API com prompt caching
@@ -229,7 +232,9 @@ App-carro/
 │       ├── webmotors.js
 │       ├── mercadolivre.js
 │       └── facebook.js     # Playwright, best-effort
-└── data/app.db             # SQLite, criado em runtime
+└── data/
+    ├── cars.json            # anúncios agregados (criado em runtime)
+    └── fipe.json            # cache FIPE (criado em runtime)
 ```
 
 ### Fluxo de uma busca
@@ -239,7 +244,7 @@ App-carro/
 3. Listings são normalizadas (`src/normalize.js`) para um formato canônico.
 4. Filtro hard: `year >= MIN_YEAR`, cidade na RMC, preço > R$ 5.000.
 5. `fipe.js` busca preço FIPE pra cada carro (cache 7 dias).
-6. Dados persistidos em SQLite (upsert por `(source, externalId)`).
+6. Dados persistidos em `data/cars.json` (upsert por `source:externalId`).
 7. `intelligence.js` chama Claude em batches de 20, com `cache_control`
    no system prompt — primeiro request paga os tokens, os seguintes
    reaproveitam do cache e ficam baratos.

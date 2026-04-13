@@ -1,184 +1,170 @@
+// Persistencia em JSON files puro — sem dependencias nativas.
+//
+// Antes usavamos better-sqlite3, mas ele precisa compilar C++ via node-gyp
+// e nao tem binarios prontos pra todas as versoes do Node (quebra em
+// Node 24 sem VS Build Tools). Pro nosso uso (cache de FIPE + ate ~200
+// carros), JSON em disco e mais do que suficiente e funciona em qualquer
+// Node 20+.
+//
+// Dois arquivos sao mantidos:
+//   data/cars.json    — carros agregados, key = "{source}:{externalId}"
+//   data/fipe.json    — cache FIPE, key = "{brand}|{model}|{year}"
+//
+// Escrita e agendada com debounce de 100ms pra nao bater no disco a cada
+// upsert durante uma busca. Atomico via write-to-tmp + rename.
+
 import fs from 'node:fs';
-import Database from 'better-sqlite3';
+import path from 'node:path';
 import { config } from './config.js';
 
 if (!fs.existsSync(config.dataDir)) {
   fs.mkdirSync(config.dataDir, { recursive: true });
 }
 
-const db = new Database(config.dbPath);
-db.pragma('journal_mode = WAL');
-db.pragma('foreign_keys = ON');
+const CARS_FILE = path.join(config.dataDir, 'cars.json');
+const FIPE_FILE = path.join(config.dataDir, 'fipe.json');
 
-db.exec(`
-  CREATE TABLE IF NOT EXISTS cars (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    source TEXT NOT NULL,
-    external_id TEXT NOT NULL,
-    url TEXT NOT NULL,
-    title TEXT,
-    brand TEXT,
-    model TEXT,
-    year INTEGER,
-    km INTEGER,
-    price REAL,
-    phone TEXT,
-    city TEXT,
-    description TEXT,
-    photo_url TEXT,
-    fipe_price REAL,
-    fipe_delta REAL,
-    score INTEGER,
-    reason TEXT,
-    red_flags TEXT,
-    first_seen_at INTEGER NOT NULL,
-    last_seen_at INTEGER NOT NULL,
-    UNIQUE(source, external_id)
-  );
+function loadJson(file) {
+  try {
+    if (!fs.existsSync(file)) return null;
+    const text = fs.readFileSync(file, 'utf-8');
+    return text ? JSON.parse(text) : null;
+  } catch (err) {
+    console.warn(`[db] falha ao ler ${file}: ${err.message}. Comecando vazio.`);
+    return null;
+  }
+}
 
-  CREATE INDEX IF NOT EXISTS idx_cars_year ON cars(year);
-  CREATE INDEX IF NOT EXISTS idx_cars_score ON cars(score);
-  CREATE INDEX IF NOT EXISTS idx_cars_last_seen ON cars(last_seen_at);
+function saveJsonAtomic(file, data) {
+  const tmp = file + '.tmp';
+  fs.writeFileSync(tmp, JSON.stringify(data, null, 2));
+  fs.renameSync(tmp, file);
+}
 
-  CREATE TABLE IF NOT EXISTS fipe_cache (
-    key TEXT PRIMARY KEY,
-    price REAL,
-    fetched_at INTEGER NOT NULL
-  );
-`);
+// Estado em memoria (hydrated do disco no import)
+const carsMap = loadJson(CARS_FILE) || {};
+const fipeCache = loadJson(FIPE_FILE) || {};
 
-const upsertCarStmt = db.prepare(`
-  INSERT INTO cars (
-    source, external_id, url, title, brand, model, year, km, price,
-    phone, city, description, photo_url, fipe_price, fipe_delta,
-    score, reason, red_flags, first_seen_at, last_seen_at
-  ) VALUES (
-    @source, @external_id, @url, @title, @brand, @model, @year, @km, @price,
-    @phone, @city, @description, @photo_url, @fipe_price, @fipe_delta,
-    @score, @reason, @red_flags, @now, @now
-  )
-  ON CONFLICT(source, external_id) DO UPDATE SET
-    url          = excluded.url,
-    title        = excluded.title,
-    brand        = COALESCE(excluded.brand, cars.brand),
-    model        = COALESCE(excluded.model, cars.model),
-    year         = COALESCE(excluded.year, cars.year),
-    km           = COALESCE(excluded.km, cars.km),
-    price        = excluded.price,
-    phone        = COALESCE(excluded.phone, cars.phone),
-    city         = COALESCE(excluded.city, cars.city),
-    description  = COALESCE(excluded.description, cars.description),
-    photo_url    = COALESCE(excluded.photo_url, cars.photo_url),
-    fipe_price   = COALESCE(excluded.fipe_price, cars.fipe_price),
-    fipe_delta   = COALESCE(excluded.fipe_delta, cars.fipe_delta),
-    score        = COALESCE(excluded.score, cars.score),
-    reason       = COALESCE(excluded.reason, cars.reason),
-    red_flags    = COALESCE(excluded.red_flags, cars.red_flags),
-    last_seen_at = excluded.last_seen_at
-  RETURNING id;
-`);
+// Debounced saves pra nao escrever o arquivo inteiro a cada upsert
+let saveCarsTimer = null;
+function scheduleSaveCars() {
+  if (saveCarsTimer) return;
+  saveCarsTimer = setTimeout(() => {
+    try {
+      saveJsonAtomic(CARS_FILE, carsMap);
+    } catch (err) {
+      console.warn(`[db] falha ao salvar cars.json: ${err.message}`);
+    }
+    saveCarsTimer = null;
+  }, 100);
+}
+
+let saveFipeTimer = null;
+function scheduleSaveFipe() {
+  if (saveFipeTimer) return;
+  saveFipeTimer = setTimeout(() => {
+    try {
+      saveJsonAtomic(FIPE_FILE, fipeCache);
+    } catch (err) {
+      console.warn(`[db] falha ao salvar fipe.json: ${err.message}`);
+    }
+    saveFipeTimer = null;
+  }, 100);
+}
+
+let nextId = Math.max(0, ...Object.values(carsMap).map((c) => c.id || 0)) + 1;
+
+function keyOf(source, externalId) {
+  return `${source}:${externalId}`;
+}
+
+// Merge "COALESCE-style": campos novos sobrepoem os existentes,
+// mas so se forem nao-null/undefined (preserva valores ja populados).
+function mergeField(newVal, oldVal) {
+  return newVal != null ? newVal : oldVal != null ? oldVal : null;
+}
 
 export function upsertCar(car) {
+  const key = keyOf(car.source, car.externalId);
   const now = Date.now();
-  const row = upsertCarStmt.get({
-    source: car.source,
-    external_id: car.externalId,
-    url: car.url,
-    title: car.title ?? null,
-    brand: car.brand ?? null,
-    model: car.model ?? null,
-    year: car.year ?? null,
-    km: car.km ?? null,
-    price: car.price ?? null,
-    phone: car.phone ?? null,
-    city: car.city ?? null,
-    description: car.description ?? null,
-    photo_url: car.photoUrl ?? null,
-    fipe_price: car.fipePrice ?? null,
-    fipe_delta: car.fipeDelta ?? null,
-    score: car.score ?? null,
-    reason: car.reason ?? null,
-    red_flags: car.redFlags ? JSON.stringify(car.redFlags) : null,
-    now,
-  });
-  return row?.id;
-}
+  const existing = carsMap[key];
 
-const updateScoreStmt = db.prepare(`
-  UPDATE cars
-     SET score = @score, reason = @reason, red_flags = @red_flags
-   WHERE source = @source AND external_id = @external_id
-`);
+  const merged = {
+    id: existing?.id ?? nextId++,
+    source: car.source,
+    externalId: String(car.externalId),
+    url: car.url,
+    title: mergeField(car.title, existing?.title),
+    brand: mergeField(car.brand, existing?.brand),
+    model: mergeField(car.model, existing?.model),
+    year: mergeField(car.year, existing?.year),
+    km: mergeField(car.km, existing?.km),
+    price: car.price ?? existing?.price ?? null,
+    phone: mergeField(car.phone, existing?.phone),
+    city: mergeField(car.city, existing?.city),
+    description: mergeField(car.description, existing?.description),
+    photoUrl: mergeField(car.photoUrl, existing?.photoUrl),
+    fipePrice: mergeField(car.fipePrice, existing?.fipePrice),
+    fipeDelta: mergeField(car.fipeDelta, existing?.fipeDelta),
+    score: mergeField(car.score, existing?.score),
+    reason: mergeField(car.reason, existing?.reason),
+    redFlags: car.redFlags ?? existing?.redFlags ?? [],
+    firstSeenAt: existing?.firstSeenAt ?? now,
+    lastSeenAt: now,
+  };
+
+  carsMap[key] = merged;
+  scheduleSaveCars();
+  return merged.id;
+}
 
 export function updateScore(source, externalId, { score, reason, redFlags }) {
-  updateScoreStmt.run({
-    source,
-    external_id: externalId,
-    score: score ?? null,
-    reason: reason ?? null,
-    red_flags: redFlags ? JSON.stringify(redFlags) : null,
-  });
+  const key = keyOf(source, externalId);
+  const car = carsMap[key];
+  if (!car) return;
+  car.score = score ?? null;
+  car.reason = reason ?? null;
+  car.redFlags = redFlags ?? [];
+  scheduleSaveCars();
 }
-
-const recentCarsStmt = db.prepare(`
-  SELECT * FROM cars
-   WHERE last_seen_at >= @since
-     AND (year IS NULL OR year >= @minYear)
-   ORDER BY COALESCE(score, -1) DESC, last_seen_at DESC
-   LIMIT @limit
-`);
 
 export function getRecentCars({ sinceMs, minYear, limit = 200 }) {
-  const rows = recentCarsStmt.all({
-    since: Date.now() - sinceMs,
-    minYear,
-    limit,
-  });
-  return rows.map(deserializeCar);
+  const cutoff = Date.now() - sinceMs;
+  return Object.values(carsMap)
+    .filter((c) => c.lastSeenAt >= cutoff)
+    .filter((c) => c.year == null || c.year >= minYear)
+    .sort((a, b) => {
+      const sa = a.score ?? -1;
+      const sb = b.score ?? -1;
+      if (sa !== sb) return sb - sa;
+      return b.lastSeenAt - a.lastSeenAt;
+    })
+    .slice(0, limit);
 }
-
-function deserializeCar(row) {
-  return {
-    id: row.id,
-    source: row.source,
-    externalId: row.external_id,
-    url: row.url,
-    title: row.title,
-    brand: row.brand,
-    model: row.model,
-    year: row.year,
-    km: row.km,
-    price: row.price,
-    phone: row.phone,
-    city: row.city,
-    description: row.description,
-    photoUrl: row.photo_url,
-    fipePrice: row.fipe_price,
-    fipeDelta: row.fipe_delta,
-    score: row.score,
-    reason: row.reason,
-    redFlags: row.red_flags ? JSON.parse(row.red_flags) : [],
-    firstSeenAt: row.first_seen_at,
-    lastSeenAt: row.last_seen_at,
-  };
-}
-
-const getFipeStmt = db.prepare('SELECT * FROM fipe_cache WHERE key = ?');
-const setFipeStmt = db.prepare(`
-  INSERT INTO fipe_cache (key, price, fetched_at)
-  VALUES (?, ?, ?)
-  ON CONFLICT(key) DO UPDATE SET price = excluded.price, fetched_at = excluded.fetched_at
-`);
 
 export function getFipeCache(key, maxAgeMs) {
-  const row = getFipeStmt.get(key);
-  if (!row) return null;
-  if (Date.now() - row.fetched_at > maxAgeMs) return null;
-  return row.price;
+  const entry = fipeCache[key];
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > maxAgeMs) return null;
+  return entry.price;
 }
 
 export function setFipeCache(key, price) {
-  setFipeStmt.run(key, price, Date.now());
+  fipeCache[key] = { price, fetchedAt: Date.now() };
+  scheduleSaveFipe();
 }
 
-export default db;
+// Flush sincrono pra shutdown graceful
+process.on('beforeExit', () => {
+  if (saveCarsTimer) {
+    clearTimeout(saveCarsTimer);
+    saveJsonAtomic(CARS_FILE, carsMap);
+  }
+  if (saveFipeTimer) {
+    clearTimeout(saveFipeTimer);
+    saveJsonAtomic(FIPE_FILE, fipeCache);
+  }
+});
+
+// Default export pra backwards compat com quem importava `import db from`
+export default { upsertCar, updateScore, getRecentCars, getFipeCache, setFipeCache };
