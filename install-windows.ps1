@@ -69,6 +69,15 @@ Write-Host "Vou instalar Node.js, Git, baixar o projeto e iniciar o server."
 Write-Host "Tempo estimado: 3 a 5 minutos (depende da sua internet)."
 Write-Host ""
 
+# Best-effort: ajustar ExecutionPolicy no escopo do usuario pra evitar
+# problemas com npm.ps1 em sessoes futuras. Se falhar (group policy
+# restrita), tudo bem — o script usa `cmd /c` pra contornar mesmo assim.
+try {
+    Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned -Force -ErrorAction SilentlyContinue
+} catch {
+    # ignorar — group policy pode estar forcando Restricted
+}
+
 # ---------- 2. Checar winget ----------
 
 Write-Step "Verificando winget (Windows Package Manager)"
@@ -187,7 +196,11 @@ if (Test-Path $repoPath) {
 
 Write-Step "Instalando dependencias do projeto (npm run setup)"
 Write-Host "  Isto vai rodar npm install - 1 a 2 minutos na primeira vez..."
-& npm run setup
+# Usamos 'cmd /c npm ...' em vez de '& npm ...' pra contornar uma
+# limitacao: PowerShell tenta carregar npm.ps1 que e bloqueado pela
+# ExecutionPolicy em muitas maquinas Windows. cmd.exe usa npm.cmd, que
+# nao sofre dessa restricao.
+cmd /c "npm run setup"
 if ($LASTEXITCODE -ne 0) {
     Write-Err "npm run setup falhou. Veja o erro acima."
     Write-Host ""
@@ -196,7 +209,7 @@ if ($LASTEXITCODE -ne 0) {
     Write-Host "  - Falta de build tools (o Node installer ja tinha que ter instalado)"
     Write-Host "  - Conexao lenta/caiu"
     Write-Host ""
-    Write-Host "Tente rodar manualmente: cd $repoPath ; npm install"
+    Write-Host "Tente rodar manualmente: cd $repoPath && cmd /c `"npm install`""
     Read-Host "Pressione Enter para fechar"
     exit 1
 }
@@ -205,18 +218,11 @@ Write-Ok "Setup completo"
 # ---------- 7. Iniciar o server em uma nova janela ----------
 
 Write-Step "Iniciando o servidor"
-$startCmd = @"
-Set-Location '$repoPath'
-`$Host.UI.RawUI.WindowTitle = 'App-carro - dev server'
-Write-Host '==============================================' -ForegroundColor Cyan
-Write-Host '  App-carro - servidor de desenvolvimento' -ForegroundColor Cyan
-Write-Host '  NAO FECHE ESSA JANELA enquanto estiver usando' -ForegroundColor Yellow
-Write-Host '  Pra parar: Ctrl+C' -ForegroundColor Gray
-Write-Host '==============================================' -ForegroundColor Cyan
-Write-Host ''
-npm run dev
-"@
-Start-Process powershell -ArgumentList @("-NoExit", "-Command", $startCmd)
+# Usamos cmd.exe (nao powershell) pra janela do server, pelos mesmos
+# motivos da Step 6: evita a limitacao do npm.ps1. /K mantem a janela
+# aberta, titulo e cd sao feitos no mesmo chain.
+$serverCmdLine = "title App-carro - dev server && cd /d `"$repoPath`" && echo. && echo ============================================== && echo   App-carro - servidor de desenvolvimento && echo   NAO FECHE ESSA JANELA enquanto estiver usando && echo   Pra parar: Ctrl+C && echo ============================================== && echo. && npm run dev"
+Start-Process cmd -ArgumentList @("/K", $serverCmdLine)
 Write-Ok "Servidor iniciando numa nova janela"
 
 # ---------- 8. Esperar o server responder e abrir navegador ----------
@@ -270,7 +276,8 @@ Write-Host "  4. O server reinicia sozinho (node --watch)" -ForegroundColor Gray
 Write-Host ""
 Write-Host "Pra atualizar o app no futuro (quando eu fizer commits):"
 Write-Host "  cd $repoPath" -ForegroundColor Gray
-Write-Host "  npm run sync" -ForegroundColor Gray
+Write-Host "  cmd /c `"npm run sync`"" -ForegroundColor Gray
+Write-Host "  (o 'cmd /c' contorna o bloqueio de npm.ps1 do PowerShell)" -ForegroundColor DarkGray
 Write-Host ""
 Write-Host "A janela do servidor continua aberta em segundo plano."
 Write-Host "Pra parar, feche aquela janela (ou Ctrl+C dentro dela)."
