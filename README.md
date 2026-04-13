@@ -9,7 +9,70 @@ pelas melhores.
 Filtro hard: carros de **2018 ou mais novos**, na **Região Metropolitana
 de Campinas**.
 
-## 🚀 Quickstart (roda no seu computador)
+## 🪟 Windows — instalação automática (recomendado)
+
+Se você está no **Windows 10 (1809+)** ou **Windows 11** e quer zero
+fricção, tem um instalador que faz **tudo sozinho**: instala Node.js
+e Git se faltar, clona o projeto, roda o setup, inicia o server, abre
+o navegador em `http://localhost:3000`.
+
+### Opção A — PowerShell (1 comando)
+
+Abre o **PowerShell** (clica com botão direito no botão Iniciar → "Windows
+PowerShell") e cola este comando:
+
+```powershell
+irm https://raw.githubusercontent.com/videon8n/App-carro/main/install-windows.ps1 | iex
+```
+
+Aperta Enter. Aceita a elevação de Admin (popup UAC). Espera 3–5 min.
+Pronto — o navegador abre com o app rodando.
+
+### Opção B — Clicar duas vezes num arquivo
+
+1. Baixa o [install-windows.bat](https://raw.githubusercontent.com/videon8n/App-carro/main/install-windows.bat) (clica com direito → "Salvar link como…")
+2. Clica duas vezes no arquivo salvo
+3. Aceita a elevação de Admin
+4. Espera 3–5 min
+
+### O que o instalador faz exatamente
+
+1. Pede elevação de Admin (necessária pra instalar Node/Git via winget)
+2. Verifica e instala **Node.js LTS** via winget (pula se já tiver v20+)
+3. Verifica e instala **Git** via winget (pula se já tiver)
+4. Clona o projeto em `%USERPROFILE%\App-carro` (ou dá `git pull` se já existir)
+5. Roda `npm run setup` (instala dependências, cria `.env` com demo mode ligado)
+6. Inicia `npm run dev` numa **nova janela do PowerShell** (que fica aberta)
+7. Espera o server responder no `/api/health`
+8. Abre `http://localhost:3000` no navegador padrão
+
+### Atualizar no futuro
+
+Sempre que eu fizer commits novos, você atualiza com:
+
+```powershell
+cd $HOME\App-carro
+npm run sync
+```
+
+O `node --watch` já rodando pega as mudanças e reinicia sozinho. F5 no
+navegador pra ver.
+
+### Se der errado
+
+Veja a seção [Troubleshooting](#troubleshooting) mais abaixo. Os erros
+mais comuns no Windows:
+
+- **winget não encontrado**: Windows muito antigo. Atualiza pelo
+  Windows Update, ou instala "App Installer" pela Microsoft Store.
+- **better-sqlite3 build error**: o Node LTS installer já traz o que
+  precisa. Se falhar, rode o instalador de novo.
+- **Antivírus bloqueando**: adiciona `%USERPROFILE%\App-carro` à
+  whitelist do Defender/Norton/etc.
+
+---
+
+## 🚀 Quickstart (manual, qualquer OS)
 
 Pré-requisitos: **Node.js 20+** (baixe em <https://nodejs.org>, versão LTS).
 
